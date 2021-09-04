@@ -121,10 +121,8 @@ public class InAppWebViewClient extends WebViewClient {
     if (url.startsWith("intent://")) {
       String temp = url.substring(9);
       try {
-        // when intent data string has :
-        if (temp.indexOf(":") > -1) {
-          temp = java.net.URLEncoder.encode(temp, "utf-8");
-        }
+        // when intent data string has
+        temp = java.net.URLEncoder.encode(temp, "utf-8");
         encodedIntentUrl = "intent://" + temp;
       } catch (UnsupportedEncodingException e) {
         e.printStackTrace();
