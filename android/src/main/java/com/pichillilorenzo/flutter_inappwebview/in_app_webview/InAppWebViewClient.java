@@ -127,6 +127,15 @@ public class InAppWebViewClient extends WebViewClient {
       } catch (UnsupportedEncodingException e) {
         e.printStackTrace();
       }
+    } else if (url.startsWith("intent:")) {
+      String temp = url.substring(7);
+      try {
+        // when intent data string has
+        temp = java.net.URLEncoder.encode(temp, "utf-8");
+        encodedIntentUrl = "intent:" + temp;
+      } catch (UnsupportedEncodingException e) {
+        e.printStackTrace();
+      }
     }
 
     final String navigationUrl = (encodedIntentUrl != null) ? encodedIntentUrl : url;
