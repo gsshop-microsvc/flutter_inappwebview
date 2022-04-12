@@ -136,6 +136,15 @@ public class InAppWebViewClient extends WebViewClient {
       } catch (UnsupportedEncodingException e) {
         e.printStackTrace();
       }
+    } else if (url.startsWith("v3mobileplusweb://")) {
+      String temp = url.substring(18);
+      try {
+        // when intent data string has
+        temp = java.net.URLEncoder.encode(temp, "utf-8");
+        encodedIntentUrl = "v3mobileplusweb://" + temp;
+      } catch (UnsupportedEncodingException e) {
+        e.printStackTrace();
+      }
     }
 
     final String navigationUrl = (encodedIntentUrl != null) ? encodedIntentUrl : url;
