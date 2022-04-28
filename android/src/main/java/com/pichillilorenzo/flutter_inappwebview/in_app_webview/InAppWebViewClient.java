@@ -86,7 +86,12 @@ public class InAppWebViewClient extends WebViewClient {
       } else {
         // There isn't any way to load an URL for a frame that is not the main frame,
         // so if the request is not for the main frame, the navigation is allowed.
-        return request.isForMainFrame();
+        
+        //[현상] Chrome99이상부터 iframe일경우 location케이스에서 이슈 발생.
+        //iframe일때는 Build.VERSION_CODES.LOLLIPOP 해당 버전의 shouldOverride호출
+        //Flutter이슈로 인해 true로 고정. 주요 카드사 결제 유형 64개 테스트 완료 
+        //return request.isForMainFrame(); 
+        return true;
       }
     }
     return false;
