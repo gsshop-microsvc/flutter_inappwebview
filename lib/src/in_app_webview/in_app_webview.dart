@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:developer';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -374,6 +376,48 @@ class InAppWebView extends StatefulWidget implements WebView {
 
 class _InAppWebViewState extends State<InAppWebView> {
   late InAppWebViewController _controller;
+  AndroidViewController? _androidViewController;
+  late MethodChannel _channel;
+
+  int _persistedId = DateTime.now().millisecondsSinceEpoch % 100000;
+  ValueNotifier<bool> _lifecycleState = ValueNotifier<bool>(false);
+
+  late AppLifecycleListener _lifecycleListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onRestart: () {
+        log('[keykat] onRestart');
+        _lifecycleState.value = !(_lifecycleState.value);
+      },
+      onHide: () {
+        log('[keykat] onHide');
+      },
+      onPause: () {
+        log('[keykat] onPause');
+      },
+      onDetach: () {
+        log('[keykat] onDeatch');
+      },
+      onInactive: () {
+        log('[keykat] onInactive');
+      },
+    );
+
+    _channel = MethodChannel(
+        'com.pichillilorenzo/flutter_inappwebview_sub_${_persistedId}');
+  }
+
+  @override
+  dispose() {
+    super.dispose();
+    _lifecycleListener.dispose();
+    if (Platform.isAndroid) {
+      _channel.invokeMethod('persistedDispose');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -386,72 +430,32 @@ class _InAppWebViewState extends State<InAppWebView> {
             "To use the pull-to-refresh feature, useHybridComposition Android-specific option MUST be true!");
       }
 
-      if (useHybridComposition) {
-        return PlatformViewLink(
-          viewType: 'com.pichillilorenzo/flutter_inappwebview',
-          surfaceFactory: (
-            BuildContext context,
-            PlatformViewController controller,
-          ) {
-            return AndroidViewSurface(
-              controller: controller as AndroidViewController,
-              gestureRecognizers: widget.gestureRecognizers ??
-                  const <Factory<OneSequenceGestureRecognizer>>{},
-              hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-            );
-          },
-          onCreatePlatformView: (PlatformViewCreationParams params) {
-            return PlatformViewsService.initSurfaceAndroidView(
-              id: params.id,
+      return ValueListenableBuilder<bool>(
+          valueListenable: _lifecycleState,
+          builder: (context, state, child) {
+            // log('[keykat] valueListenableBuilder: $_persistedId $state');
+            return PlatformViewLink(
+              key: ValueKey('${_persistedId}_$state'),
               viewType: 'com.pichillilorenzo/flutter_inappwebview',
-              layoutDirection:
-                  Directionality.maybeOf(context) ?? TextDirection.rtl,
-              creationParams: <String, dynamic>{
-                'initialUrlRequest': widget.initialUrlRequest?.toMap(),
-                'initialFile': widget.initialFile,
-                'initialData': widget.initialData?.toMap(),
-                'initialOptions': widget.initialOptions?.toMap() ?? {},
-                'contextMenu': widget.contextMenu?.toMap() ?? {},
-                'windowId': widget.windowId,
-                'implementation': widget.implementation.toValue(),
-                'initialUserScripts':
-                    widget.initialUserScripts?.map((e) => e.toMap()).toList() ??
-                        [],
-                'pullToRefreshOptions':
-                    widget.pullToRefreshController?.options.toMap() ??
-                        PullToRefreshOptions(enabled: false).toMap()
+              surfaceFactory: (
+                BuildContext context,
+                PlatformViewController controller,
+              ) {
+                return AndroidViewSurface(
+                  controller: controller as AndroidViewController,
+                  gestureRecognizers: widget.gestureRecognizers ??
+                      const <Factory<OneSequenceGestureRecognizer>>{},
+                  hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+                );
               },
-              creationParamsCodec: const StandardMessageCodec(),
-            )
-              ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
-              ..addOnPlatformViewCreatedListener(
-                  (id) => _onPlatformViewCreated(id))
-              ..create();
-          },
-        );
-      } else {
-        return AndroidView(
-          viewType: 'com.pichillilorenzo/flutter_inappwebview',
-          onPlatformViewCreated: _onPlatformViewCreated,
-          gestureRecognizers: widget.gestureRecognizers,
-          layoutDirection: Directionality.maybeOf(context) ?? TextDirection.rtl,
-          creationParams: <String, dynamic>{
-            'initialUrlRequest': widget.initialUrlRequest?.toMap(),
-            'initialFile': widget.initialFile,
-            'initialData': widget.initialData?.toMap(),
-            'initialOptions': widget.initialOptions?.toMap() ?? {},
-            'contextMenu': widget.contextMenu?.toMap() ?? {},
-            'windowId': widget.windowId,
-            'implementation': widget.implementation.toValue(),
-            'initialUserScripts':
-                widget.initialUserScripts?.map((e) => e.toMap()).toList() ?? [],
-            'pullToRefreshOptions':
-                widget.pullToRefreshController?.options.toMap() ??
-                    PullToRefreshOptions(enabled: false).toMap()
-          },
-          creationParamsCodec: const StandardMessageCodec(),
-        );
-      }
+              onCreatePlatformView: (PlatformViewCreationParams params) {
+                return _initSurfaceAndroidViewController(params);
+                // return _androidViewController = state
+                //     ? _initExpensiveAndroidViewController(params)
+                //     : _initSurfaceAndroidViewController(params);
+              },
+            );
+          });
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       return UiKitView(
         viewType: 'com.pichillilorenzo/flutter_inappwebview',
@@ -478,14 +482,69 @@ class _InAppWebViewState extends State<InAppWebView> {
         '$defaultTargetPlatform is not yet supported by the flutter_inappwebview plugin');
   }
 
-  @override
-  void didUpdateWidget(InAppWebView oldWidget) {
-    super.didUpdateWidget(oldWidget);
+  AndroidViewController _initExpensiveAndroidViewController(
+    PlatformViewCreationParams params,
+  ) {
+    return PlatformViewsService.initExpensiveAndroidView(
+      id: params.id,
+      viewType: 'com.pichillilorenzo/flutter_inappwebview',
+      layoutDirection: Directionality.maybeOf(context) ?? TextDirection.rtl,
+      creationParams: <String, dynamic>{
+        'initialUrlRequest': widget.initialUrlRequest?.toMap(),
+        'initialFile': widget.initialFile,
+        'initialData': widget.initialData?.toMap(),
+        'initialOptions': widget.initialOptions?.toMap() ?? {},
+        'contextMenu': widget.contextMenu?.toMap() ?? {},
+        'windowId': widget.windowId,
+        'persistedId': _persistedId,
+        'implementation': widget.implementation.toValue(),
+        'initialUserScripts':
+            widget.initialUserScripts?.map((e) => e.toMap()).toList() ?? [],
+        'pullToRefreshOptions':
+            widget.pullToRefreshController?.options.toMap() ??
+                PullToRefreshOptions(enabled: false).toMap()
+      },
+      creationParamsCodec: const StandardMessageCodec(),
+    )
+      ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
+      ..addOnPlatformViewCreatedListener(
+          (id) => _onPlatformViewCreated(_persistedId))
+      ..create();
+  }
+
+  AndroidViewController _initSurfaceAndroidViewController(
+    PlatformViewCreationParams params,
+  ) {
+    return PlatformViewsService.initSurfaceAndroidView(
+      id: params.id,
+      viewType: 'com.pichillilorenzo/flutter_inappwebview',
+      layoutDirection: Directionality.maybeOf(context) ?? TextDirection.rtl,
+      creationParams: <String, dynamic>{
+        'initialUrlRequest': widget.initialUrlRequest?.toMap(),
+        'initialFile': widget.initialFile,
+        'initialData': widget.initialData?.toMap(),
+        'initialOptions': widget.initialOptions?.toMap() ?? {},
+        'contextMenu': widget.contextMenu?.toMap() ?? {},
+        'windowId': widget.windowId,
+        'persistedId': _persistedId,
+        'implementation': widget.implementation.toValue(),
+        'initialUserScripts':
+            widget.initialUserScripts?.map((e) => e.toMap()).toList() ?? [],
+        'pullToRefreshOptions':
+            widget.pullToRefreshController?.options.toMap() ??
+                PullToRefreshOptions(enabled: false).toMap()
+      },
+      creationParamsCodec: const StandardMessageCodec(),
+    )
+      ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
+      ..addOnPlatformViewCreatedListener(
+          (id) => _onPlatformViewCreated(_persistedId))
+      ..create();
   }
 
   @override
-  void dispose() {
-    super.dispose();
+  void didUpdateWidget(InAppWebView oldWidget) {
+    super.didUpdateWidget(oldWidget);
   }
 
   void _onPlatformViewCreated(int id) {
